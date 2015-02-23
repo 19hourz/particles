@@ -4,6 +4,9 @@
 #include <math.h>
 #include <pthread.h>
 #include "common.h"
+#ifdef __APPLE__
+#include "pthread_barrier.h"
+#endif
 
 //
 //  global variables
