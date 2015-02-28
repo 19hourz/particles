@@ -2,7 +2,32 @@
 #include <stdio.h>
 #include <assert.h>
 #include <math.h>
+#include <vector>
 #include "common.h"
+
+using std::vector;
+
+#define _cutoff 0.01
+#define _density 0.0005
+
+double binSize,gridSize;
+int binNum;
+vector<particle_t>* data;
+
+void buildBins(int n,particle_t* particles)
+{
+	gridSize = sqrt(n*_density);
+	binSize = 2*_cutoff; 
+	binNum = int(gridSize / binSize)+1; // Should be around sqrt(N)
+	// Increase\Decrease binNum to be something like 2^k?
+	data = new vector<particle_t>[binNum*binNum];
+	for(int i=0;i<n;i++)
+	{
+		int x = int(particles[i].x / binSize);
+		int y = int(particles[i].y / binSize);
+		data[x*binNum+y].push_back(particles[i]);
+	}
+}
 
 //
 //  benchmarking program
@@ -35,6 +60,8 @@ int main( int argc, char **argv )
     set_size( n );
     init_particles( n, particles );
     
+    buildBins(n,particles);
+    
     //
     //  simulate a number of time steps
     //
@@ -42,9 +69,9 @@ int main( int argc, char **argv )
 	
     for( int step = 0; step < NSTEPS; step++ )
     {
-	navg = 0;
+		navg = 0;
         davg = 0.0;
-	dmin = 1.0;
+		dmin = 1.0;
         //
         //  compute forces
         //
