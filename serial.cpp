@@ -18,7 +18,8 @@ vector<particle_t>* data;
 void buildBins(int n,particle_t* particles)
 {
 	gridSize = sqrt(n*_density);
-	binSize = 3*_cutoff; 
+	binSize = 3*_cutoff;  //Should not have the constant 3... But if not, the simulation would fail...Strange
+	
 	binNum = int(gridSize / binSize)+1; // Should be around sqrt(N)
 	printf("Grid Size: %.4lf\n",gridSize);
 	printf("Number of Bins: %d*%d\n",binNum,binNum);
