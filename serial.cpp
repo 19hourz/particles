@@ -70,7 +70,7 @@ int main( int argc, char **argv )
     //
     double simulation_time = read_timer( );
 	
-    for( int step = 0; step < NSTEPS; step++ )
+    for (int step = 0; step < NSTEPS; step++ )
     {
     	//if (step%10==0)printf("%d ",step);
 		navg = 0;
@@ -86,20 +86,20 @@ int main( int argc, char **argv )
             for (int j = 0; j < n; j++ )
 				apply_force( particles[i], particles[j],&dmin,&davg,&navg);
         }*/
-        for(int i=0;i<binNum;i++)
-        	for(int j=0;j<binNum;j++)
+        for (int i = 0; i < binNum; i++)
+        	for (int j = 0; j < binNum; j++)
         	{
-        		vector<particle_t>&vec = data[i*binNum+j];
-        		for(int k=0;k<vec.size();k++)
-        			vec[k].ax=vec[k].ay=0;
-				for(int dx=-1;dx<=1;dx++)   //Search over nearby 8 bins and itself
-    				for(int dy=-1;dy<=1;dy++)
-        				if (i+dx>=0 && i+dx<binNum && j+dy>=0 && j+dy<binNum)
+        		vector<particle_t>& vec = data[i*binNum+j];
+        		for (int k = 0; k < vec.size(); k++)
+        			vec[k].ax = vec[k].ay = 0;
+				for (int dx = -1; dx <= 1; dx++)   //Search over nearby 8 bins and itself
+    				for (int dy = -1; dy <= 1; dy++)
+        				if (i + dx >= 0 && i + dx < binNum && j + dy >= 0 && j + dy < binNum)
         				{
-        					vector<particle_t>&vec2 = data[(i+dx)*binNum+j+dy];
-        					for(int k=0;k<vec.size();k++)
-        						for(int l=0;l<vec2.size();l++)
-	        						apply_force( vec[k], vec2[l],&dmin,&davg,&navg);
+        					vector<particle_t>& vec2 = data[(i+dx) * binNum + j + dy];
+        					for (int k = 0; k < vec.size(); k++)
+        						for (int l = 0; l < vec2.size(); l++)
+	        						apply_force( vec[k], vec2[l], &dmin, &davg, &navg);
         				}
         	}
  
@@ -108,28 +108,28 @@ int main( int argc, char **argv )
         //
         /*for( int i = 0; i < n; i++ ) 
             move( particles[i] );		*/
-		int tot=0;
-		for(int i=0;i<binNum;i++)
-        	for(int j=0;j<binNum;j++)
+		int tot = 0;
+		for (int i = 0; i < binNum; i++)
+        	for(int j = 0; j < binNum; j++)
         	{
-        		vector<particle_t>&vec = data[i*binNum+j];
-        		int tail=vec.size(),k=0;
-        		for(;k<tail;)
+        		vector<particle_t>& vec = data[i * binNum + j];
+        		int tail = vec.size(), k = 0;
+        		for(; k < tail; )
         		{
 					move( vec[k] );
 					int x = int(vec[k].x / binSize);  //Check the position
 					int y = int(vec[k].y / binSize);
-					if (x==i && y==j)  // Still inside original bin
+					if (x == i && y == j)  // Still inside original bin
 						k++;
 					else
 					{
-						temp[tot++]=vec[k];  // Store paricles that have changed bin. 
+						temp[tot++] = vec[k];  // Store paricles that have changed bin. 
 						vec[k] = vec[--tail]; //Remove it from the current bin.
 					}
         		}
         		vec.resize(k);
         	}
-        for(int i=0;i<tot;i++)  // Put them into the new bin 
+        for (int i = 0; i < tot; i++)  // Put them into the new bin 
         {
         	int x = int(temp[i].x / binSize);
 			int y = int(temp[i].y / binSize);
