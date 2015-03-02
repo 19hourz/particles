@@ -67,8 +67,8 @@ int main( int argc, char **argv )
     particle_t *particles = (particle_t*) malloc( n * sizeof(particle_t) );
 
     vector<bin_t> particle_bins;
-    bin_t temp;
-
+    vector<bin_t> temp;
+    
     set_size( n );
     init_particles( n, particles );
     
@@ -77,71 +77,95 @@ int main( int argc, char **argv )
     //  simulate a number of time steps
     //
     double simulation_time = read_timer( );
-    
+    //omp_set_num_threads(16);
     int numthreads;
     #pragma omp parallel private(dmin) 
     {
-        numthreads = omp_get_num_threads();
+        #pragma omp master
+        {
+            numthreads = omp_get_num_threads();
+            temp.resize(numthreads);
+        }
+        
         for (int step = 0; step < NSTEPS; step++ )
         {
-            navg = 0;
-            davg = 0.0;
-            dmin = 1.0;
-            #pragma omp for reduction (+:navg) reduction(+:davg)
-            for (int i = 0; i < binNum; i++)
+            //#pragma omp parallel private(dmin) 
             {
-                for (int j = 0; j < binNum; j++)
-                {
-                    bin_t& vec = particle_bins[i*binNum+j];
-                    for (int k = 0; k < vec.size(); k++)
-                        vec[k].ax = vec[k].ay = 0;
-                    for (int dx = -1; dx <= 1; dx++)   //Search over nearby 8 bins and itself
-                    {
-                        for (int dy = -1; dy <= 1; dy++)
-                        {
-                            if (i + dx >= 0 && i + dx < binNum && j + dy >= 0 && j + dy < binNum)
-                            {
-                                bin_t& vec2 = particle_bins[(i+dx) * binNum + j + dy];
-                                for (int k = 0; k < vec.size(); k++)
-                                    for (int l = 0; l < vec2.size(); l++)
-                                        apply_force( vec[k], vec2[l], &dmin, &davg, &navg);
-                            }
-                        }
-                    }
-                }
-            }
-            #pragma omp master
-            {
+                navg = 0;
+                davg = 0.0;
+                dmin = 1.0;
+                #pragma omp for reduction (+:navg) reduction(+:davg)
                 for (int i = 0; i < binNum; i++)
                 {
-                    for(int j = 0; j < binNum; j++)
+                    for (int j = 0; j < binNum; j++)
                     {
-                        bin_t& vec = particle_bins[i * binNum + j];
-                        int tail = vec.size(), k = 0;
-                        for(; k < tail; )
+                        bin_t& vec = particle_bins[i*binNum+j];
+                        for (int k = 0; k < vec.size(); k++)
+                            vec[k].ax = vec[k].ay = 0;
+                        for (int dx = -1; dx <= 1; dx++)   //Search over nearby 8 bins and itself
                         {
-                            move( vec[k] );
-                            int x = int(vec[k].x / binSize);  //Check the position
-                            int y = int(vec[k].y / binSize);
-                            if (x == i && y == j)  // Still inside original bin
-                                k++;
-                            else
+                            for (int dy = -1; dy <= 1; dy++)
                             {
-                                temp.push_back(vec[k]);  // Store paricles that have changed bin. 
-                                vec[k] = vec[--tail]; //Remove it from the current bin.
+                                if (i + dx >= 0 && i + dx < binNum && j + dy >= 0 && j + dy < binNum)
+                                {
+                                    bin_t& vec2 = particle_bins[(i+dx) * binNum + j + dy];
+                                    for (int k = 0; k < vec.size(); k++)
+                                        for (int l = 0; l < vec2.size(); l++)
+                                            apply_force( vec[k], vec2[l], &dmin, &davg, &navg);
+                                }
                             }
                         }
-                        vec.resize(k);
                     }
                 }
-                
-                for (int i = 0; i < temp.size(); i++)  // Put them into the new bin 
+            
+                    
+                //#pragma omp master
                 {
-                    int x = int(temp[i].x / binSize);
-                    int y = int(temp[i].y / binSize);
-                    particle_bins[x*binNum+y].push_back(temp[i]);
+                    int id = omp_get_thread_num();  // Each thread has a seperate tmp vector
+                    bin_t& tmp = temp[id];
+                    tmp.clear();
+                    #pragma omp for
+                    for (int i = 0; i < binNum; i++)
+                    {
+                        for(int j = 0; j < binNum; j++)
+                        {
+                            bin_t& vec = particle_bins[i * binNum + j];
+                            int tail = vec.size(), k = 0;
+                            for(; k < tail; )
+                            {
+                                move( vec[k] );
+                                int x = int(vec[k].x / binSize);  //Check the position
+                                int y = int(vec[k].y / binSize);
+                                if (x == i && y == j)  // Still inside original bin
+                                    k++;
+                                else
+                                {
+                                    tmp.push_back(vec[k]);  // Store paricles that have changed bin. 
+                                    vec[k] = vec[--tail]; //Remove it from the current bin.
+                                }
+                            }
+                            vec.resize(k);
+                        }
+                    }
+                    //Scan over all tmp vectors using one threads...
+                    //Using multiple threads with critical area seems to decrease performance 
+                    #pragma omp master 
+                    {
+                        for(int j=0;j<numthreads;j++)
+                        {
+                            bin_t& tmp = temp[j];
+                            for (int i = 0; i < tmp.size(); i++)  // Put them into the new bin 
+                            {
+                                int x = int(tmp[i].x / binSize);
+                                int y = int(tmp[i].y / binSize);
+                                //If using multiple threads, below is critical area
+                                //#pragma omp critical  
+                                particle_bins[x*binNum+y].push_back(tmp[i]);
+                            }
+                        }
+                    }
+                    
                 }
-                temp.clear();
             }
             
             if( find_option( argc, argv, "-no" ) == -1 )
@@ -161,6 +185,9 @@ int main( int argc, char **argv )
                 if( fsave && (step%SAVEFREQ) == 0 )
                     save( fsave, n, particles );
             }
+            
+            #pragma omp barrier // Wait for all threads (mostly the master) to finish
+
         }
     }
     simulation_time = read_timer( ) - simulation_time;
