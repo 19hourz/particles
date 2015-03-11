@@ -18,6 +18,9 @@ pthread_barrier_t barrier;
 pthread_mutex_t mutex=PTHREAD_MUTEX_INITIALIZER;
 double gabsmin=1.0,gabsavg=0.0;
 
+#define _cutoff 0.01    //Value copied from common.cpp
+#define _density 0.0005
+
 //
 //  check that pthreads routine call was successful
 //
