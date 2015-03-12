@@ -148,9 +148,9 @@ int main( int argc, char **argv )
     delete[] particles;
     particles = NULL;
 
-    int bins_per_proc = bins.size() / n_proc + 1;
-    int my_bins_start = bins_per_proc * rank;
-    int my_bins_end = min(bins.size(), bins_per_proc * (rank + 1));
+    int x_bins_per_proc = bin_count / n_proc + 1;
+    int my_bins_start = x_bins_per_proc * rank;
+    int my_bins_end = min(bin_count, x_bins_per_proc * (rank + 1));
     printf("worker %d: from %d to %d.\n", rank, my_bins_start, my_bins_end);
     //
     //  simulate a number of time steps
@@ -167,9 +167,10 @@ int main( int argc, char **argv )
                 save( fsave, n, particles );
 
         // compute local forces
-        for (int index = my_bins_start; index < my_bins_end; ++index) {
-            int i = index / bin_count, j = index % bin_count;
-            compute_forces_for_bin(bins, i, j, dmin, davg, navg);
+        for (int i = my_bins_start; i < my_bins_end; ++i) {
+            for (int j = 0; j < bin_count; ++j) {
+                compute_forces_for_bin(bins, i, j, dmin, davg, navg);
+            }
         }
 
         if (find_option( argc, argv, "-no" ) == -1) {
@@ -187,6 +188,11 @@ int main( int argc, char **argv )
         }
 
         // move, but not rebin
+        for (int i = my_bins_start; i < my_bins_end; ++i) {
+            for (int j = 0; j < bin_count; ++j) {
+                move(bins[i * bin_count + j]);
+            }
+        }
         for (int index = my_bins_start; index < my_bins_end; ++index) {
             for (int k = 0; k < bins[index].size(); ++k) {
                 move(bins[index][k]);
