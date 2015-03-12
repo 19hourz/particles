@@ -11,8 +11,6 @@ using std::vector;
 #define _cutoff 0.01    //Value copied from common.cpp
 #define _density 0.0005
 
-typedef vector<particle_t> bin_t;
-
 double binSize,gridSize;
 int binNum;
 

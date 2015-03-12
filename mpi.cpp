@@ -15,12 +15,10 @@ using std::set;
 #define _cutoff 0.01    //Value copied from common.cpp
 #define _density 0.0005
 
-typedef vector<particle_t> bin_t;
-
 double bin_size, grid_size;
 int bin_count;
 
-void build_bins(vector<bin_t>& bins, particle_t* particles, int n)
+inline void build_bins(vector<bin_t>& bins, particle_t* particles, int n)
 {
     grid_size = sqrt(n * _density);
     bin_size = _cutoff;  
@@ -63,6 +61,14 @@ inline void compute_forces_for_bin(vector<bin_t>& bins, int i, int j, double& dm
     }
 }
 
+inline void bin_particle(particle_t& particle, vector<bin_t>& bins)
+{
+    int x = particle.x / bin_size;
+    int y = particle.y / bin_size;
+    bins[x*bin_count + y].push_back(particle);
+}
+
+
 inline void get_neighbors(int i, int j, vector<int>& neighbors)
 {
     for (int dx = -1; dx <= 1; dx++) {
@@ -77,12 +83,6 @@ inline void get_neighbors(int i, int j, vector<int>& neighbors)
     }
 }
 
-inline void bin_particle(particle_t& particle, vector<bin_t>& bins)
-{
-    int x = particle.x / bin_size;
-    int y = particle.y / bin_size;
-    bins[x*bin_count + y].push_back(particle);
-}
 
 //
 //  benchmarking program
@@ -213,7 +213,7 @@ int main( int argc, char **argv )
                         neighbor_proc.insert(who);
                 }
 
-                for (auto it = neighbor_proc.begin(); it != neighbor_proc.end(); ++it) {
+                for (set<int>::iterator it = neighbor_proc.begin(); it != neighbor_proc.end(); ++it) {
                     requests.push_back(MPI_Request());
                     MPI_Isend(old_bins[index].data(), old_bins[index].size(), PARTICLE, *it, index, MPI_COMM_WORLD, &(requests.back()));
                     //printf("worker %d: sending bin %d with %ld particles to worker %d.\n",
@@ -239,7 +239,7 @@ int main( int argc, char **argv )
                         neighbor_proc.insert(who);
                 }
 
-                for (auto it = neighbor_proc.begin(); it != neighbor_proc.end(); ++it) {
+                for (set<int>::iterator it = neighbor_proc.begin(); it != neighbor_proc.end(); ++it) {
                     int who = *it;
                     MPI_Status status;
                     MPI_Probe(who, MPI_ANY_TAG, MPI_COMM_WORLD, &status);

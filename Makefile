@@ -6,7 +6,7 @@
 CC = CC
 MPCC = CC
 OPENMP = -mp
-CFLAGS = -O3
+CFLAGS = -Ofast
 LIBS =
 UNAME := $(shell uname)
 

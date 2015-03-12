@@ -18,8 +18,6 @@ using std::vector;
 using std::map;
 using std::set;
 
-typedef vector<particle_t> bin_t;
-
 namespace {
 
     int n, n_threads,no_output=0;
@@ -151,7 +149,7 @@ void *thread_routine(int thread_no, int threads)
                 nabsavg++;
             }
             if (dmin < absmin) absmin = dmin;
-	    }
+        }
 
         // move, but not rebin
         for (int index = bin_start; index < bin_end; ++index) {
