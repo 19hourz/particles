@@ -13,7 +13,7 @@
 #include <algorithm>
 
 
-#define NUM_THREADS 256
+#define NUM_THREADS 512
 //#define _cutoff 0.01    //Value copied from common.cpp
 //#define _density 0.0005
 #define MAXITEM 4 //Assume at most MAXITEM particles in one bin. Change depends on binSize
@@ -48,18 +48,31 @@ __device__ void apply_force_gpu(particle_t &particle, particle_t &neighbor)
 
 }
 
-__global__ void compute_forces_gpu(particle_t * particles, int n)
+__global__ void compute_forces_gpu(particle_t * particles, int*cnt,int n,double binSize,int binNum)
 {
   // Get thread (particle) ID
-  __shared__ int a[1024*1024*1024];
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  if(tid >= n) return;
-
-  particles[tid].ax = particles[tid].ay = 0;
-  for(int j = 0 ; j < n ; j++)
-    a[j]++;
-    //apply_force_gpu(particles[tid], particles[j]);
-
+  
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    if (tid>=n)return;
+    particles[tid].ax = particles[tid].ay = 0;
+    int i = int(particles[tid].x / binSize);
+    int j = int(particles[tid].y / binSize);
+    for(int dx=-1;dx<=1;dx++)
+    {
+        int x = i+dx;
+        for(int dy=-1;dy<=1;dy++)
+        {
+            int y = j + dy;
+            if (x >= 0 && x < binNum && y >= 0 && y < binNum)
+            {
+                int id = x*binNum+y;
+                int start = cnt[id-1],end = cnt[id];
+                //bin_t& vec2 = particle_bins[(i+dx) * binNum + j + dy];
+                for (int k = start; k < end; k++)
+                    apply_force_gpu(particles[tid], particles[k]);
+            }
+        }
+    }
 }
 
 __global__ void move_gpu (particle_t * particles, int n, double size)
@@ -183,7 +196,7 @@ int main( int argc, char **argv )
         //
         //  compute forces
         //
-        int threadNum = 512;
+        int threadNum = NUM_THREADS;
         int blockNum = min(512,(n+threadNum-1)/threadNum);
         
         
@@ -199,14 +212,15 @@ int main( int argc, char **argv )
         std::swap(d_particles,tmp);
         cudaMemcpy(cnt, count, binNum*binNum * sizeof(int), cudaMemcpyHostToDevice);
         
-        //int blks = (n + NUM_THREADS - 1) / NUM_THREADS;
-    	//compute_forces_gpu <<< blks, NUM_THREADS >>> (d_particles, n);
-    	compute_forces_gpu<<<blockNum,threadNum>>> (d_particles,cnt,n);
+        //compute_forces_gpu <<< blks, NUM_THREADS >>> (d_particles, n);
+    	int blks = (n + NUM_THREADS - 1) / NUM_THREADS;
+    	compute_forces_gpu<<<blks, NUM_THREADS>>> (d_particles,cnt,n,binSize,binNum);
         
         //
         //  move particles
         //
-    	//move_gpu <<< blks, NUM_THREADS >>> (d_particles, n, size);
+    	
+    	move_gpu <<< blks, NUM_THREADS >>> (d_particles, n, size);
         
         //
         //  save if necessary
