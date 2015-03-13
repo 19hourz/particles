@@ -10,14 +10,23 @@
 #include <thrust/sort.h>
 #include <thrust/copy.h>
 #include <vector>
+#include <algorithm>
 
 
 #define NUM_THREADS 256
+//#define _cutoff 0.01    //Value copied from common.cpp
+//#define _density 0.0005
+#define MAXITEM 4 //Assume at most MAXITEM particles in one bin. Change depends on binSize
+
 
 extern double size;
+
+double binSize;
+int binNum;
 //
 //  benchmarking program
 //
+
 
 __device__ void apply_force_gpu(particle_t &particle, particle_t &neighbor)
 {
@@ -42,12 +51,14 @@ __device__ void apply_force_gpu(particle_t &particle, particle_t &neighbor)
 __global__ void compute_forces_gpu(particle_t * particles, int n)
 {
   // Get thread (particle) ID
+  __shared__ int a[1024*1024*1024];
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
   if(tid >= n) return;
 
   particles[tid].ax = particles[tid].ay = 0;
   for(int j = 0 ; j < n ; j++)
-    apply_force_gpu(particles[tid], particles[j]);
+    a[j]++;
+    //apply_force_gpu(particles[tid], particles[j]);
 
 }
 
@@ -84,7 +95,30 @@ __global__ void move_gpu (particle_t * particles, int n, double size)
 
 }
 
+__global__ void getCount(particle_t* particles, int* count,int n,double binSize,int binNum)
+{
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    int offset = gridDim.x*blockDim.x;
+    for(int i=tid;i<n;i+=offset)
+    {
+        int x = int(particles[i].x / binSize);
+        int y = int(particles[i].y / binSize);
+        atomicAdd(count+x*binNum+y,1);
+    }
+}
 
+__global__ void buildBins(particle_t* particles,particle_t* tmp,int* count,int n,double binSize,int binNum)
+{
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    int offset = gridDim.x*blockDim.x;
+    for(int i=tid;i<n;i+=offset)
+    {
+        int x = int(particles[i].x / binSize);
+        int y = int(particles[i].y / binSize);
+        int id = atomicSub(count+x*binNum+y,1);
+        tmp[id-1] = particles[i];
+    }
+}
 
 int main( int argc, char **argv )
 {    
@@ -108,12 +142,25 @@ int main( int argc, char **argv )
     particle_t *particles = (particle_t*) malloc( n * sizeof(particle_t) );
 
     // GPU particle data structure
-    particle_t * d_particles;
+    particle_t * d_particles,*tmp;
     cudaMalloc((void **) &d_particles, n * sizeof(particle_t));
-
+    cudaMalloc((void **) &tmp, n * sizeof(particle_t));
+    
     std::vector<thrust::device_vector<int> > H(4);
     set_size( n );
-
+    binSize = cutoff*4;  
+    binNum = int(size / binSize)+1; // Should be around sqrt(N/2)
+    printf("Grid Size: %.4lf\n",size);
+    printf("Number of Bins: %d*%d\n",binNum,binNum);
+    printf("Bin Size: %.2lf\n",binSize);
+    
+    
+    int* cnt;
+    cudaMalloc((void **) &cnt, (binNum*binNum+1) * sizeof(int));
+    cudaMemset(cnt,0,(binNum*binNum+1)*sizeof(int));
+    cnt+=1; //Add one therefore cnt[-1]==0
+    int* count = (int*) malloc(binNum*binNum * sizeof(int));
+    	
     init_particles( n, particles );
 
     cudaThreadSynchronize();
@@ -136,14 +183,30 @@ int main( int argc, char **argv )
         //
         //  compute forces
         //
-
-    	int blks = (n + NUM_THREADS - 1) / NUM_THREADS;
-    	compute_forces_gpu <<< blks, NUM_THREADS >>> (d_particles, n);
+        int threadNum = 512;
+        int blockNum = min(512,(n+threadNum-1)/threadNum);
+        
+        
+        //Old methods that don't assume maxitems for each bin
+        cudaMemset(cnt,0,binNum*binNum*sizeof(int));
+        getCount<<<blockNum,threadNum>>>(d_particles,cnt,n,binSize,binNum);
+        
+        cudaMemcpy(count, cnt, binNum*binNum * sizeof(int), cudaMemcpyDeviceToHost);
+        for(int i=1;i<binNum*binNum;i++)  //Prefix sum  could be faster using parallel....
+            count[i]+=count[i-1];
+        cudaMemcpy(cnt, count, binNum*binNum * sizeof(int), cudaMemcpyHostToDevice);
+        buildBins<<<blockNum,threadNum>>>(d_particles,tmp,cnt,n,binSize,binNum);
+        std::swap(d_particles,tmp);
+        cudaMemcpy(cnt, count, binNum*binNum * sizeof(int), cudaMemcpyHostToDevice);
+        
+        //int blks = (n + NUM_THREADS - 1) / NUM_THREADS;
+    	//compute_forces_gpu <<< blks, NUM_THREADS >>> (d_particles, n);
+    	compute_forces_gpu<<<blockNum,threadNum>>> (d_particles,cnt,n);
         
         //
         //  move particles
         //
-    	move_gpu <<< blks, NUM_THREADS >>> (d_particles, n, size);
+    	//move_gpu <<< blks, NUM_THREADS >>> (d_particles, n, size);
         
         //
         //  save if necessary
