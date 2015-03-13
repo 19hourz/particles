@@ -61,10 +61,13 @@ inline void compute_forces_for_bin(vector<bin_t>& bins, int i, int j, double& dm
     }
 }
 
-inline void bin_particle(particle_t& particle, vector<bin_t>& bins)
+void bin_particle(particle_t& particle, vector<bin_t>& bins)
 {
     int x = particle.x / bin_size;
     int y = particle.y / bin_size;
+    //printf("bin %d. x %d. y %d", x*bin_count + y, x, y);
+    //fflush(stdout);
+    //printf(", size %ld.\n", bins[x*bin_count + y].size());
     bins[x*bin_count + y].push_back(particle);
 }
 
@@ -149,8 +152,15 @@ int main( int argc, char **argv )
     particles = NULL;
 
     int x_bins_per_proc = bin_count / n_proc + 1;
+
+    // although each worker has all particles, we only access particles within
+    // my_bins_start, my_bins_end.
+
+
+
     int my_bins_start = x_bins_per_proc * rank;
     int my_bins_end = min(bin_count, x_bins_per_proc * (rank + 1));
+    
     printf("worker %d: from %d to %d.\n", rank, my_bins_start, my_bins_end);
     //
     //  simulate a number of time steps
@@ -188,110 +198,182 @@ int main( int argc, char **argv )
         }
 
         // move, but not rebin
+        bin_t local_move;
+        bin_t remote_move;
+
         for (int i = my_bins_start; i < my_bins_end; ++i) {
             for (int j = 0; j < bin_count; ++j) {
-                move(bins[i * bin_count + j]);
+                bin_t& bin = bins[i * bin_count + j];
+                int tail = bin.size(), k = 0;
+                for (; k < tail; ) {
+                    move(bin[k]);
+                    int x = int(bin[k].x / bin_size);
+                    int y = int(bin[k].y / bin_size);
+                    if (my_bins_start <= x && x < my_bins_end) {
+                        if (x == i && y == j)
+                            ++k;
+                        else {
+                            local_move.push_back(bin[k]);
+                            bin[k] = bin[--tail];
+                        }
+                    } else {
+                        //int who = x / x_bins_per_proc;
+                        remote_move.push_back(bin[k]);
+                        bin[k] = bin[--tail];
+                    }
+                }
+                bin.resize(k);
             }
         }
-        for (int index = my_bins_start; index < my_bins_end; ++index) {
-            for (int k = 0; k < bins[index].size(); ++k) {
-                move(bins[index][k]);
-            }
+
+        for (int i = 0; i < local_move.size(); ++i) {
+            bin_particle(local_move[i], bins);
         }
 
-        // send
-        for (int count = 0; count < 2; ++count) {
-            vector<MPI_Request> requests;
-            std::map<int, bin_t> old_bins;
-            for (int index = my_bins_start; index < my_bins_end; ++index) {
-                int i = index / bin_count, j = index % bin_count;
-                vector<int> neighbors;
-                set<int> neighbor_proc;
-                get_neighbors(i, j, neighbors);
+        // int len_ = remote_move.size();
+        // int total_ = 0;
+        // MPI_Reduce(&len_, &total_, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
 
-                // copy old data until completion
-                old_bins[index] = bins[index];
+        bin_t incoming_move;
+        int send_count = remote_move.size();
+        int recv_counts[n_proc];
 
-                // send
-                for (int k = 0; k < neighbors.size(); ++k) {
-                    int who = neighbors[k] / bins_per_proc;
-                    if (who != rank)
-                        neighbor_proc.insert(who);
-                }
+        // printf("worker: %d. MPI_Gather.\n", rank);
+        MPI_Gather(&send_count, 1, MPI_INT, recv_counts, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-                for (set<int>::iterator it = neighbor_proc.begin(); it != neighbor_proc.end(); ++it) {
-                    requests.push_back(MPI_Request());
-                    MPI_Isend(old_bins[index].data(), old_bins[index].size(), PARTICLE, *it, index, MPI_COMM_WORLD, &(requests.back()));
-                    //printf("worker %d: sending bin %d with %ld particles to worker %d.\n",
-                    //    rank, index, old_bins[index].size(), *it);
-                }
+        // now root knows recv_counts
+
+        int displs[n_proc];
+        int total_num = 0;
+
+        if (rank == 0) {
+            displs[0] = 0;
+            for (int i = 1; i < n_proc; ++i) {
+                displs[i] = displs[i-1] + recv_counts[i-1];
+            }
+            total_num = recv_counts[n_proc-1] + displs[n_proc-1];
+            // printf("worker: %d, 1. %d / %d.\n", rank, total_, total_num);
+            // assert(total_ == total_num);
+            incoming_move.resize(total_num);
+        }
+
+        // now root knows total_num.
+
+        //printf("worker: %d. MPI_Gatherv.\n", rank);
+
+        MPI_Gatherv(remote_move.data(), send_count, PARTICLE, 
+            incoming_move.data(), recv_counts, displs, PARTICLE, 
+            0, MPI_COMM_WORLD);
+
+        //printf("worker: %d. Classify.\n", rank);
+
+        vector<bin_t> scatter_particles;
+        scatter_particles.resize(n_proc);
+
+        if (rank == 0) {
+            for (int i = 0; i < incoming_move.size(); ++i) {
+                int x = int(incoming_move[i].x / bin_size);
+                assert(incoming_move[i].x >= 0 && incoming_move[i].y >= 0 &&
+                    incoming_move[i].x <= grid_size && incoming_move[i].y <= grid_size);
+                int who = x / x_bins_per_proc;
+                scatter_particles[who].push_back(incoming_move[i]);
+            }
+            for (int i = 0; i < n_proc; ++i) {
+                recv_counts[i] = scatter_particles[i].size();
+            }
+            displs[0] = 0;
+            for (int i = 1; i < n_proc; ++i) {
+                displs[i] = displs[i-1] + recv_counts[i-1];
+            }
+            // printf("worker: %d, 2. %d / %d.\n", rank, total_, displs[n_proc-1] + recv_counts[n_proc-1]);
+            // assert(total_ == displs[n_proc-1] + recv_counts[n_proc-1]);
+        }
+
+        // printf("worker: %d. MPI_Scatter.\n", rank);
+        send_count = 0;
+        MPI_Scatter(recv_counts, 1, MPI_INT, &send_count, 1, MPI_INT, 0, MPI_COMM_WORLD);
+        
+        bin_t outgoing_move;
+        outgoing_move.resize(send_count);
+
+        bin_t scatter_particles_flatten;
+        for (int i = 0; i < scatter_particles.size(); ++i) {
+            scatter_particles_flatten.insert(scatter_particles_flatten.end(),
+                scatter_particles[i].begin(), scatter_particles[i].end());
+        }
+
+        // printf("worker: %d. MPI_Scatterv.\n", rank);
+        MPI_Scatterv(scatter_particles_flatten.data(), recv_counts, displs, PARTICLE, 
+            outgoing_move.data(), send_count, PARTICLE, 0, MPI_COMM_WORLD);
+
+        // int total__ = 0;
+        // MPI_Reduce(&send_count, &total__, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+        // if (rank == 0) {
+        //     assert(total_ == total__);
+        // }
+
+        // printf("worker: %d. Bin.\n", rank);
+        for (int i = 0; i < send_count; ++i) {
+            particle_t &p = outgoing_move[i];
+            assert(p.x >= 0 && p.y >= 0 && p.x <= grid_size && p.y <= grid_size);
+            bin_particle(p, bins);
+        }
+
+        bin_t for_up, for_down;
+        MPI_Request req_up, req_down;
+
+        if (rank != 0) {
+            for (int i = my_bins_start, j = 0; j < bin_count; ++j) {
+                bin_t& bin = bins[i * bin_count + j];
+                for_up.insert(for_up.end(), bin.begin(), bin.end());
+            }
+            MPI_Isend(for_up.data(), for_up.size(), PARTICLE, rank - 1, 0, MPI_COMM_WORLD, &req_up);
+        }
+
+        if (rank != n_proc - 1) {
+            bin_t recv_tmp;
+            MPI_Status status;
+            MPI_Probe(rank + 1, 0, MPI_COMM_WORLD, &status);
+            int count;
+            MPI_Get_count(&status, PARTICLE, &count);
+            recv_tmp.resize(count);
+
+            MPI_Recv(recv_tmp.data(), count, PARTICLE, rank + 1, 0, MPI_COMM_WORLD, &status);
+
+            for (int i = my_bins_end, j = 0; j < bin_count; ++j) {
+                bin_t& bin = bins[i * bin_count + j];
+                bin.clear();
             }
 
-            //printf("worker %d: barrier.\n", rank);
-            //MPI_Barrier(MPI_COMM_WORLD);
-
-            // recv
-            //printf("worker %d: recv.\n", rank);
-            for (int index = my_bins_start; index < my_bins_end; ++index) {
-                int i = index / bin_count, j = index % bin_count;
-
-                vector<int> neighbors;
-                get_neighbors(i, j, neighbors);
-                set<int> neighbor_proc;
-
-                for (int k = 0; k < neighbors.size(); ++k) {
-                    int who = neighbors[k] / bins_per_proc;
-                    if (who != rank)
-                        neighbor_proc.insert(who);
-                }
-
-                for (set<int>::iterator it = neighbor_proc.begin(); it != neighbor_proc.end(); ++it) {
-                    int who = *it;
-                    MPI_Status status;
-                    MPI_Probe(who, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-
-                    int len = 0;
-                    MPI_Get_count(&status, PARTICLE, &len);
-                    assert(len >= 0);
-                    assert(len <= n);
-
-                    int bin = status.MPI_TAG;
-                    assert(bin < bin_count * bin_count);
-                    assert(0 <= bin);
-
-                    bins[bin].resize(len);
-
-                    MPI_Recv(bins[bin].data(), bins[bin].size(), PARTICLE, who, bin, MPI_COMM_WORLD, &status);
-                    //printf("worker %d: recv bin %d with %d particles from worker %d.\n", 
-                    //    rank, bin, len, who);
-                }
+            for (int i = 0; i < recv_tmp.size(); ++i) {
+                bin_particle(recv_tmp[i], bins);
             }
 
-            // rebin
-            vector<int> local_bin_indices;
-            for (int index = my_bins_start; index < my_bins_end; ++index) {
-                int i = index / bin_count, j = index % bin_count;
-                vector<int> neighbors;
-                get_neighbors(i, j, neighbors);
-                local_bin_indices.insert(local_bin_indices.end(), neighbors.begin(), neighbors.end());
+            for (int i = my_bins_end-1, j = 0; j < bin_count; ++j) {
+                bin_t& bin = bins[i * bin_count + j];
+                for_down.insert(for_down.end(), bin.begin(), bin.end());
             }
-            // dedup
-            std::sort(local_bin_indices.begin(), local_bin_indices.end());
-            local_bin_indices.erase(std::unique(local_bin_indices.begin(), local_bin_indices.end()), local_bin_indices.end());
+            MPI_Isend(for_down.data(), for_down.size(), PARTICLE, rank + 1, 0, MPI_COMM_WORLD, &req_down);
+        }
 
-            bin_t local_bin;
-            for (int b = 0; b < local_bin_indices.size(); ++b) {
-                int i = local_bin_indices[b];
-                local_bin.insert(local_bin.end(), bins[i].begin(), bins[i].end());
-                bins[i].clear();
+        if (rank != 0) {
+            bin_t recv_tmp;
+            MPI_Status status;
+            MPI_Probe(rank - 1, 0, MPI_COMM_WORLD, &status);
+            int count;
+            MPI_Get_count(&status, PARTICLE, &count);
+            recv_tmp.resize(count);
+
+            MPI_Recv(recv_tmp.data(), count, PARTICLE, rank - 1, 0, MPI_COMM_WORLD, &status);
+
+            for (int i = my_bins_start-1, j = 0; j < bin_count; ++j) {
+                bin_t& bin = bins[i * bin_count + j];
+                bin.clear();
             }
 
-            for (int i = 0; i < local_bin.size(); ++i) {
-                bin_particle(local_bin[i], bins);
+            for (int i = 0; i < recv_tmp.size(); ++i) {
+                bin_particle(recv_tmp[i], bins);
             }
-
-            //printf("worker %d: barrier 2.\n", rank);
-            //MPI_Barrier(MPI_COMM_WORLD);
         }
     }
     simulation_time = read_timer( ) - simulation_time;

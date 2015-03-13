@@ -5,15 +5,16 @@
 #
 CC = CC
 MPCC = CC
-OPENMP = -mp
-CFLAGS = -Ofast
+OPENMP = -fopenmp
+CFLAGS = -Ofast -std=c++11
 LIBS =
 UNAME := $(shell uname)
 
 ifeq ($(UNAME), Darwin)
 CC = g++-4.8
 MPCC = mpic++
-OPENMP = -fopenmp
+else
+CFLAGS += -march=opteron
 endif
 
 TARGETS = serial pthreads openmp mpi autograder
