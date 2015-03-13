@@ -177,9 +177,9 @@ int main( int argc, char **argv )
         dmin = 1.0;
         davg = 0.0;
 
-        if( find_option(argc, argv, "-no" ) == -1 )
-            if( fsave && (step%SAVEFREQ) == 0 )
-                save( fsave, n, particles );
+        // if( find_option(argc, argv, "-no" ) == -1 )
+        //     if( fsave && (step%SAVEFREQ) == 0 )
+        //         save( fsave, n, particles );
 
         // compute local forces
         for (int i = my_bins_start; i < my_bins_end; ++i) {
