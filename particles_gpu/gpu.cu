@@ -4,6 +4,13 @@
 #include <math.h>
 #include <cuda.h>
 #include "common.h"
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
+#include <thrust/generate.h>
+#include <thrust/sort.h>
+#include <thrust/copy.h>
+#include <vector>
+
 
 #define NUM_THREADS 256
 
@@ -104,6 +111,7 @@ int main( int argc, char **argv )
     particle_t * d_particles;
     cudaMalloc((void **) &d_particles, n * sizeof(particle_t));
 
+    std::vector<thrust::device_vector<int> > H(4);
     set_size( n );
 
     init_particles( n, particles );
@@ -129,13 +137,13 @@ int main( int argc, char **argv )
         //  compute forces
         //
 
-	int blks = (n + NUM_THREADS - 1) / NUM_THREADS;
-	compute_forces_gpu <<< blks, NUM_THREADS >>> (d_particles, n);
+    	int blks = (n + NUM_THREADS - 1) / NUM_THREADS;
+    	compute_forces_gpu <<< blks, NUM_THREADS >>> (d_particles, n);
         
         //
         //  move particles
         //
-	move_gpu <<< blks, NUM_THREADS >>> (d_particles, n, size);
+    	move_gpu <<< blks, NUM_THREADS >>> (d_particles, n, size);
         
         //
         //  save if necessary
@@ -144,7 +152,7 @@ int main( int argc, char **argv )
 	    // Copy the particles back to the CPU
             cudaMemcpy(particles, d_particles, n * sizeof(particle_t), cudaMemcpyDeviceToHost);
             save( fsave, n, particles);
-	}
+	    }
     }
     cudaThreadSynchronize();
     simulation_time = read_timer( ) - simulation_time;
