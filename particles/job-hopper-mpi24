@@ -7,12 +7,12 @@
 #PBS -A mp309
 
 cd $PBS_O_WORKDIR
-aprun -d 1 -n 24 -N 24 ./mpi -n 500 -p 24 -o mpi.txt
-aprun -d 1 -n 24 -N 24 ./mpi -n 1000 -p 24 -o mpi.txt
-aprun -d 1 -n 24 -N 24 ./mpi -n 2000 -p 24 -o mpi.txt
-aprun -d 1 -n 24 -N 24 ./mpi -n 4000 -p 24 -o mpi.txt
-aprun -d 1 -n 24 -N 24 ./mpi -n 8000 -p 24 -o mpi.txt
-aprun -d 1 -n 24 -N 24 ./mpi -n 16000 -p 24 -o mpi.txt
-aprun -d 1 -n 24 -N 24 ./mpi -n 32000 -p 24 -o mpi.txt
-aprun -d 1 -n 24 -N 24 ./mpi -n 64000 -p 24 -o mpi.txt
-aprun -d 1 -n 24 -N 24 ./mpi -n 128000 -p 24 -o mpi.txt
+aprun -d 1 -n 24 -N 24 ./mpi -n 500 -p 24 -no -s mpi.txt
+aprun -d 1 -n 24 -N 24 ./mpi -n 1000 -p 24 -no -s mpi.txt
+aprun -d 1 -n 24 -N 24 ./mpi -n 2000 -p 24 -no -s mpi.txt
+aprun -d 1 -n 24 -N 24 ./mpi -n 4000 -p 24 -no -s mpi.txt
+aprun -d 1 -n 24 -N 24 ./mpi -n 8000 -p 24 -no -s mpi.txt
+aprun -d 1 -n 24 -N 24 ./mpi -n 16000 -p 24 -no -s mpi.txt
+aprun -d 1 -n 24 -N 24 ./mpi -n 32000 -p 24 -no -s mpi.txt
+aprun -d 1 -n 24 -N 24 ./mpi -n 64000 -p 24 -no -s mpi.txt
+aprun -d 1 -n 24 -N 24 ./mpi -n 128000 -p 24 -no -s mpi.txt
