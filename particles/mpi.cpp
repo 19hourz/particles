@@ -6,6 +6,8 @@
 #include <map>
 #include <set>
 #include <cmath>
+#include <signal.h>
+#include <unistd.h>
 #include "common.h"
 
 using std::vector;
@@ -24,9 +26,9 @@ inline void build_bins(vector<bin_t>& bins, particle_t* particles, int n)
     bin_size = _cutoff;  
     bin_count = int(grid_size / bin_size) + 1; // Should be around sqrt(N/2)
 
-    printf("Grid Size: %.4lf\n", grid_size);
-    printf("Number of Bins: %d*%d\n", bin_count, bin_count);
-    printf("Bin Size: %.2lf\n", bin_size);
+    // printf("Grid Size: %.4lf\n", grid_size);
+    // printf("Number of Bins: %d*%d\n", bin_count, bin_count);
+    // printf("Bin Size: %.2lf\n", bin_size);
     // Increase\Decrease bin_count to be something like 2^k?
     
     bins.resize(bin_count * bin_count);
@@ -92,6 +94,8 @@ inline void get_neighbors(int i, int j, vector<int>& neighbors)
 //
 int main( int argc, char **argv )
 {    
+    //signal(SIGSEGV, sigsegv);
+
     int navg, nabsavg=0;
     double dmin, absmin=1.0,davg,absavg=0.0;
     double rdavg,rdmin;
@@ -151,17 +155,18 @@ int main( int argc, char **argv )
     delete[] particles;
     particles = NULL;
 
-    int x_bins_per_proc = bin_count / n_proc + 1;
+    int x_bins_per_proc = bin_count / n_proc;
 
     // although each worker has all particles, we only access particles within
     // my_bins_start, my_bins_end.
 
-
-
     int my_bins_start = x_bins_per_proc * rank;
-    int my_bins_end = min(bin_count, x_bins_per_proc * (rank + 1));
+    int my_bins_end = x_bins_per_proc * (rank + 1);
+
+    if (rank == n_proc)
+        my_bins_end = bin_count;
     
-    printf("worker %d: from %d to %d.\n", rank, my_bins_start, my_bins_end);
+    // printf("worker %d: from %d to %d.\n", rank, my_bins_start, my_bins_end);
     //
     //  simulate a number of time steps
     //
@@ -275,7 +280,7 @@ int main( int argc, char **argv )
                 int x = int(incoming_move[i].x / bin_size);
                 assert(incoming_move[i].x >= 0 && incoming_move[i].y >= 0 &&
                     incoming_move[i].x <= grid_size && incoming_move[i].y <= grid_size);
-                int who = x / x_bins_per_proc;
+                int who = min(x / x_bins_per_proc, n_proc-1);
                 scatter_particles[who].push_back(incoming_move[i]);
             }
             for (int i = 0; i < n_proc; ++i) {
