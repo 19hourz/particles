@@ -13,11 +13,11 @@
 #include <algorithm>
 
 
-#define NUM_THREADS 512
+#define NUM_THREADS 128
 //#define _cutoff 0.01    //Value copied from common.cpp
 //#define _density 0.0005
 #define MAXITEM 4 //Assume at most MAXITEM particles in one bin. Change depends on binSize
-
+#define CUTOFF_SCALE 4 
 
 extern double size;
 
@@ -161,7 +161,7 @@ int main( int argc, char **argv )
     
     std::vector<thrust::device_vector<int> > H(4);
     set_size( n );
-    binSize = cutoff*4;  
+    binSize = cutoff*CUTOFF_SCALE;  
     binNum = int(size / binSize)+1; // Should be around sqrt(N/2)
     printf("Grid Size: %.4lf\n",size);
     printf("Number of Bins: %d*%d\n",binNum,binNum);
@@ -197,7 +197,8 @@ int main( int argc, char **argv )
         //  compute forces
         //
         int threadNum = NUM_THREADS;
-        int blockNum = min(512,(n+threadNum-1)/threadNum);
+        int blks = (n + NUM_THREADS - 1) / NUM_THREADS;
+    	int blockNum = blks;//min(512,(n+threadNum-1)/threadNum);
         
         
         //Old methods that don't assume maxitems for each bin
@@ -213,7 +214,6 @@ int main( int argc, char **argv )
         cudaMemcpy(cnt, count, binNum*binNum * sizeof(int), cudaMemcpyHostToDevice);
         
         //compute_forces_gpu <<< blks, NUM_THREADS >>> (d_particles, n);
-    	int blks = (n + NUM_THREADS - 1) / NUM_THREADS;
     	compute_forces_gpu<<<blks, NUM_THREADS>>> (d_particles,cnt,n,binSize,binNum);
         
         //
