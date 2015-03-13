@@ -8,3 +8,11 @@
 
 cd $PBS_O_WORKDIR
 aprun -d 1 -n 1 -N 1 ./serial -n 500 -o serial.txt
+aprun -d 1 -n 1 -N 1 ./serial -n 1000 -o serial.txt
+aprun -d 1 -n 1 -N 1 ./serial -n 2000 -o serial.txt
+aprun -d 1 -n 1 -N 1 ./serial -n 4000 -o serial.txt
+aprun -d 1 -n 1 -N 1 ./serial -n 8000 -o serial.txt
+aprun -d 1 -n 1 -N 1 ./serial -n 16000 -o serial.txt
+aprun -d 1 -n 1 -N 1 ./serial -n 32000 -o serial.txt
+aprun -d 1 -n 1 -N 1 ./serial -n 64000 -o serial.txt
+aprun -d 1 -n 1 -N 1 ./serial -n 128000 -o serial.txt
