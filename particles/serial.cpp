@@ -16,12 +16,12 @@ int binNum;
 void buildBins(vector<bin_t>& bins, particle_t* particles, int n)
 {
     gridSize = sqrt(n*_density);
-    binSize = _cutoff;  
+    binSize = _cutoff * 2;  
     binNum = int(gridSize / binSize)+1; // Should be around sqrt(N/2)
 
-    printf("Grid Size: %.4lf\n",gridSize);
-    printf("Number of Bins: %d*%d\n",binNum,binNum);
-    printf("Bin Size: %.2lf\n",binSize);
+    // printf("Grid Size: %.4lf\n",gridSize);
+    // printf("Number of Bins: %d*%d\n",binNum,binNum);
+    // printf("Bin Size: %.2lf\n",binSize);
     // Increase\Decrease binNum to be something like 2^k?
     
     bins.resize(binNum * binNum);

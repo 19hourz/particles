@@ -24,9 +24,9 @@ inline void build_bins(vector<bin_t>& bins, particle_t* particles, int n)
     bin_size = _cutoff;  
     bin_count = int(grid_size / bin_size) + 1; // Should be around sqrt(N/2)
 
-    printf("Grid Size: %.4lf\n", grid_size);
-    printf("Number of Bins: %d*%d\n", bin_count, bin_count);
-    printf("Bin Size: %.2lf\n", bin_size);
+    // printf("Grid Size: %.4lf\n", grid_size);
+    // printf("Number of Bins: %d*%d\n", bin_count, bin_count);
+    // printf("Bin Size: %.2lf\n", bin_size);
     // Increase\Decrease bin_count to be something like 2^k?
     
     bins.resize(bin_count * bin_count);
@@ -161,7 +161,7 @@ int main( int argc, char **argv )
     int my_bins_start = x_bins_per_proc * rank;
     int my_bins_end = min(bin_count, x_bins_per_proc * (rank + 1));
     
-    printf("worker %d: from %d to %d.\n", rank, my_bins_start, my_bins_end);
+    // printf("worker %d: from %d to %d.\n", rank, my_bins_start, my_bins_end);
     //
     //  simulate a number of time steps
     //
