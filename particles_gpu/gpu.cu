@@ -3,14 +3,8 @@
 #include <assert.h>
 #include <math.h>
 #include <cuda.h>
-#include "common.h"
-#include <thrust/host_vector.h>
-#include <thrust/device_vector.h>
-#include <thrust/generate.h>
-#include <thrust/sort.h>
-#include <thrust/copy.h>
-#include <vector>
 #include <algorithm>
+#include "common.h"
 
 
 #define NUM_THREADS 128
@@ -23,6 +17,7 @@ extern double size;
 
 double binSize;
 int binNum;
+
 //
 //  benchmarking program
 //
@@ -48,41 +43,42 @@ __device__ void apply_force_gpu(particle_t &particle, particle_t &neighbor)
 
 }
 
+__constant__ const int dir[9][2]={{0,0},{-1,-1},{0,-1},{1,-1},{1,0},{1,1},{0,1},{-1,1},{-1,0}};
+
 __global__ void compute_forces_gpu(particle_t * particles, int*cnt,int n,double binSize,int binNum)
 {
   // Get thread (particle) ID
   
     int tid = threadIdx.x + blockIdx.x * blockDim.x;
     if (tid>=n)return;
-    particles[tid].ax = particles[tid].ay = 0;
-    int i = int(particles[tid].x / binSize);
-    int j = int(particles[tid].y / binSize);
-    for(int dx=-1;dx<=1;dx++)
+    particle_t p = particles[tid];
+    p.ax=p.ay=0;
+    int i = int(p.x / binSize);
+    int j = int(p.y / binSize);
+    for(int t=0;t<9;t++)
     {
-        int x = i+dx;
-        for(int dy=-1;dy<=1;dy++)
+        int x = i + dir[t][0];
+        int y = j + dir[t][1];
+        if (x >= 0 && x < binNum && y >= 0 && y < binNum)
         {
-            int y = j + dy;
-            if (x >= 0 && x < binNum && y >= 0 && y < binNum)
-            {
-                int id = x*binNum+y;
-                int start = cnt[id-1],end = cnt[id];
-                //bin_t& vec2 = particle_bins[(i+dx) * binNum + j + dy];
-                for (int k = start; k < end; k++)
-                    apply_force_gpu(particles[tid], particles[k]);
-            }
+            int id = x*binNum+y;
+            int start = cnt[id-1],end = cnt[id];
+            for (int k = start; k < end; k++)
+                apply_force_gpu(p, particles[k]);
         }
     }
+    particles[tid].ax = p.ax;
+    particles[tid].ay = p.ay;
 }
 
-__global__ void move_gpu (particle_t * particles, int n, double size)
+__global__ void move_gpu (particle_t * __restrict__ particles, int n, double size)
 {
 
   // Get thread (particle) ID
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  if(tid >= n) return;
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    if(tid >= n) return;
 
-  particle_t * p = &particles[tid];
+    particle_t * p = &particles[tid];
     //
     //  slightly simplified Velocity Verlet integration
     //  conserves energy better than explicit Euler method
@@ -107,6 +103,49 @@ __global__ void move_gpu (particle_t * particles, int n, double size)
     }
 
 }
+
+__global__ void move_gpu2 (particle_t * particles, int n, double size)
+{
+
+  // Get thread (particle) ID
+  int tid = threadIdx.x + blockIdx.x * blockDim.x;
+  if(tid >= n) return;
+
+  //particle_t  p = particles[tid];
+    //
+    //  slightly simplified Velocity Verlet integration
+    //  conserves energy better than explicit Euler method
+    //
+    /*double vx = particles[tid].vx;
+    double ax = particles[tid].ax;
+    double vy = particles[tid].vy;
+    double ay = particles[tid].ay;
+    vx += ax * dt;
+    vy += ay * dt;
+    double x = particles[tid].x;
+    double y = particles[tid].y;
+    x  += vx * dt;
+    y  += vy * dt;
+
+    //
+    //  bounce from walls
+    //
+    while( x < 0 || x > size )
+    {
+        x  = x < 0 ? -(x) : 2*size-x;
+        vx = -(vx);
+    }
+    while( y < 0 || y > size )
+    {
+        y  = y < 0 ? -(y) : 2*size-y;
+        vy = -(vy);
+    }*/
+    /*particles[tid].x = x;
+    particles[tid].y = y;
+    particles[tid].vx = vx;
+    particles[tid].vy = vy;*/
+}
+
 
 __global__ void getCount(particle_t* particles, int* count,int n,double binSize,int binNum)
 {
@@ -159,7 +198,6 @@ int main( int argc, char **argv )
     cudaMalloc((void **) &d_particles, n * sizeof(particle_t));
     cudaMalloc((void **) &tmp, n * sizeof(particle_t));
     
-    std::vector<thrust::device_vector<int> > H(4);
     set_size( n );
     binSize = cutoff*CUTOFF_SCALE;  
     binNum = int(size / binSize)+1; // Should be around sqrt(N/2)
