@@ -247,7 +247,7 @@ int main( int argc, char **argv )
             }
         }
 
-        if (rank != n_proc) {
+        if (rank != n_proc - 1) {
             for (int i = my_bins_end, j = 0; j < bin_count; ++j) {
                 bin_t& bin = bins[i * bin_count + j];
                 bin.clear();

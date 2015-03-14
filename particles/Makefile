@@ -6,7 +6,7 @@
 CC = CC
 MPCC = CC
 OPENMP = -fopenmp
-CFLAGS = -O3 -std=c++11
+CFLAGS = -Ofast -std=c++11
 LIBS =
 UNAME := $(shell uname)
 
