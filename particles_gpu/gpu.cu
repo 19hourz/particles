@@ -116,7 +116,7 @@ __global__ void move_gpu2 (particle_t * particles, int n, double size)
     //  slightly simplified Velocity Verlet integration
     //  conserves energy better than explicit Euler method
     //
-    /*double vx = particles[tid].vx;
+    double vx = particles[tid].vx;
     double ax = particles[tid].ax;
     double vy = particles[tid].vy;
     double ay = particles[tid].ay;
@@ -139,11 +139,11 @@ __global__ void move_gpu2 (particle_t * particles, int n, double size)
     {
         y  = y < 0 ? -(y) : 2*size-y;
         vy = -(vy);
-    }*/
-    /*particles[tid].x = x;
+    }
+    particles[tid].x = x;
     particles[tid].y = y;
     particles[tid].vx = vx;
-    particles[tid].vy = vy;*/
+    particles[tid].vy = vy;
 }
 
 
