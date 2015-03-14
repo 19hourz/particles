@@ -7,7 +7,7 @@
 #include "common.h"
 
 
-#define NUM_THREADS 128
+#define NUM_THREADS 256
 //#define _cutoff 0.01    //Value copied from common.cpp
 //#define _density 0.0005
 #define MAXITEM 4 //Assume at most MAXITEM particles in one bin. Change depends on binSize
@@ -50,25 +50,28 @@ __global__ void compute_forces_gpu(particle_t * particles, int*cnt,int n,double 
   // Get thread (particle) ID
   
     int tid = threadIdx.x + blockIdx.x * blockDim.x;
-    if (tid>=n)return;
-    particle_t p = particles[tid];
-    p.ax=p.ay=0;
-    int i = int(p.x / binSize);
-    int j = int(p.y / binSize);
-    for(int t=0;t<9;t++)
+    int offset = gridDim.x*blockDim.x;
+    for(int ii=tid;ii<n;ii+=offset)
     {
-        int x = i + dir[t][0];
-        int y = j + dir[t][1];
-        if (x >= 0 && x < binNum && y >= 0 && y < binNum)
+        particle_t p = particles[ii];
+        p.ax=p.ay=0;
+        int i = int(p.x / binSize);
+        int j = int(p.y / binSize);
+        for(int t=0;t<9;t++)
         {
-            int id = x*binNum+y;
-            int start = cnt[id-1],end = cnt[id];
-            for (int k = start; k < end; k++)
-                apply_force_gpu(p, particles[k]);
+            int x = i + dir[t][0];
+            int y = j + dir[t][1];
+            if (x >= 0 && x < binNum && y >= 0 && y < binNum)
+            {
+                int id = x*binNum+y;
+                int start = cnt[id-1],end = cnt[id];
+                for (int k = start; k < end; k++)
+                    apply_force_gpu(p, particles[k]);
+            }
         }
+        particles[ii].ax = p.ax;
+        particles[ii].ay = p.ay;
     }
-    particles[tid].ax = p.ax;
-    particles[tid].ay = p.ay;
 }
 
 __global__ void move_gpu (particle_t * __restrict__ particles, int n, double size)
@@ -76,30 +79,33 @@ __global__ void move_gpu (particle_t * __restrict__ particles, int n, double siz
 
   // Get thread (particle) ID
     int tid = threadIdx.x + blockIdx.x * blockDim.x;
-    if(tid >= n) return;
-
-    particle_t * p = &particles[tid];
-    //
-    //  slightly simplified Velocity Verlet integration
-    //  conserves energy better than explicit Euler method
-    //
-    p->vx += p->ax * dt;
-    p->vy += p->ay * dt;
-    p->x  += p->vx * dt;
-    p->y  += p->vy * dt;
-
-    //
-    //  bounce from walls
-    //
-    while( p->x < 0 || p->x > size )
+    int offset = gridDim.x*blockDim.x;
+    for(int i=tid;i<n;i+=offset)
     {
-        p->x  = p->x < 0 ? -(p->x) : 2*size-p->x;
-        p->vx = -(p->vx);
-    }
-    while( p->y < 0 || p->y > size )
-    {
-        p->y  = p->y < 0 ? -(p->y) : 2*size-p->y;
-        p->vy = -(p->vy);
+
+        particle_t * p = &particles[i];
+        //
+        //  slightly simplified Velocity Verlet integration
+        //  conserves energy better than explicit Euler method
+        //
+        p->vx += p->ax * dt;
+        p->vy += p->ay * dt;
+        p->x  += p->vx * dt;
+        p->y  += p->vy * dt;
+    
+        //
+        //  bounce from walls
+        //
+        while( p->x < 0 || p->x > size )
+        {
+            p->x  = p->x < 0 ? -(p->x) : 2*size-p->x;
+            p->vx = -(p->vx);
+        }
+        while( p->y < 0 || p->y > size )
+        {
+            p->y  = p->y < 0 ? -(p->y) : 2*size-p->y;
+            p->vy = -(p->vy);
+        }
     }
 
 }
@@ -116,7 +122,7 @@ __global__ void move_gpu2 (particle_t * particles, int n, double size)
     //  slightly simplified Velocity Verlet integration
     //  conserves energy better than explicit Euler method
     //
-    double vx = particles[tid].vx;
+    /*double vx = particles[tid].vx;
     double ax = particles[tid].ax;
     double vy = particles[tid].vy;
     double ay = particles[tid].ay;
@@ -139,11 +145,11 @@ __global__ void move_gpu2 (particle_t * particles, int n, double size)
     {
         y  = y < 0 ? -(y) : 2*size-y;
         vy = -(vy);
-    }
-    particles[tid].x = x;
+    }*/
+    /*particles[tid].x = x;
     particles[tid].y = y;
     particles[tid].vx = vx;
-    particles[tid].vy = vy;
+    particles[tid].vy = vy;*/
 }
 
 
@@ -235,7 +241,7 @@ int main( int argc, char **argv )
         //  compute forces
         //
         int threadNum = NUM_THREADS;
-        int blks = (n + NUM_THREADS - 1) / NUM_THREADS;
+        int blks = min(1024,(n + NUM_THREADS - 1) / NUM_THREADS);
     	int blockNum = blks;//min(512,(n+threadNum-1)/threadNum);
         
         
